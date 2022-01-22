@@ -3,6 +3,7 @@
 #include "esphome/core/component.h"
 #include "esphome/components/spi/spi.h"
 #include "esphome/components/display/display_buffer.h"
+#include <math.h>
 
 namespace esphome {
 namespace waveshare_epaper {
@@ -64,6 +65,10 @@ class WaveshareEPaper : public PollingComponent,
   GPIOPin *dc_pin_;
   GPIOPin *busy_pin_{nullptr};
   virtual uint32_t idle_timeout_() { return 1000u; }  // NOLINT(readability-identifier-naming)
+
+  virtual uint32_t get_supported_colors_count_() { return 1u; }
+  virtual uint32_t get_color_index_(Color color) { return 0u; }
+  uint32_t get_color_bit_count_() { return uint32_t(log(this->get_supported_colors_count_())/log(2))+1u; }
 };
 
 enum WaveshareEPaperTypeAModel {
@@ -232,6 +237,11 @@ class WaveshareEPaper4P2InBV2 : public WaveshareEPaper {
   int get_width_internal() override;
 
   int get_height_internal() override;
+
+#ifdef USE_ESP32
+  uint32_t get_supported_colors_count_() override;
+  uint32_t get_color_index_(Color color) override;
+#endif
 };
 
 class WaveshareEPaper5P8In : public WaveshareEPaper {

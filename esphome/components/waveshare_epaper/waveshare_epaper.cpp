@@ -2,6 +2,7 @@
 #include "esphome/core/log.h"
 #include "esphome/core/application.h"
 #include "esphome/core/helpers.h"
+#include <Esp.h>
 
 namespace esphome {
 namespace waveshare_epaper {
@@ -83,7 +84,9 @@ static const uint8_t PARTIAL_UPDATE_LUT_TTGO_B1[LUT_SIZE_TTGO_B1] = {
     0x00, 0x0F, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
 
 void WaveshareEPaper::setup_pins_() {
+  ESP_LOGE(TAG, " ##### Free before: %d", ESP.getFreeHeap());
   this->init_internal_(this->get_buffer_length_());
+  ESP_LOGE(TAG, " ##### Free after: %d", ESP.getFreeHeap());
   this->dc_pin_->setup();  // OUTPUT
   this->dc_pin_->digital_write(false);
   if (this->reset_pin_ != nullptr) {
@@ -127,25 +130,38 @@ void WaveshareEPaper::update() {
   this->do_update_();
   this->display();
 }
+
+
 void WaveshareEPaper::fill(Color color) {
+  const uint32_t start_index = this->get_color_index_(color) * this->get_buffer_length_() / this->get_supported_colors_count_();
+  const uint32_t end_index = (this->get_color_index_(color) + 1u) * this->get_buffer_length_() / this->get_supported_colors_count_();
+
   // flip logic
   const uint8_t fill = color.is_on() ? 0x00 : 0xFF;
   for (uint32_t i = 0; i < this->get_buffer_length_(); i++)
-    this->buffer_[i] = fill;
+    if (i >= start_index && i < end_index) {
+      this->buffer_[i] = fill;
+    } else {
+      // clear all other colors
+      this->buffer_[i] = 0xFF;
+    }
 }
 void HOT WaveshareEPaper::draw_absolute_pixel_internal(int x, int y, Color color) {
   if (x >= this->get_width_internal() || y >= this->get_height_internal() || x < 0 || y < 0)
     return;
 
-  const uint32_t pos = (x + y * this->get_width_internal()) / 8u;
-  const uint8_t subpos = x & 0x07;
-  // flip logic
-  if (!color.is_on())
-    this->buffer_[pos] |= 0x80 >> subpos;
-  else
-    this->buffer_[pos] &= ~(0x80 >> subpos);
+  for (uint32_t i = 0; i < this->get_supported_colors_count_(); i++) {
+    const uint32_t offset = i * (this->get_buffer_length_() / this->get_supported_colors_count_());
+    const uint32_t pos = offset + (x + y * this->get_width_internal()) / 8u;
+    const uint8_t subpos = x & 0x07;
+    // flip logic
+    if (!color.is_on() || i != this->get_color_index_(color))
+      this->buffer_[pos] |= 0x80 >> subpos;
+    else
+      this->buffer_[pos] &= ~(0x80 >> subpos);
+  }
 }
-uint32_t WaveshareEPaper::get_buffer_length_() { return this->get_width_internal() * this->get_height_internal() / 8u; }
+uint32_t WaveshareEPaper::get_buffer_length_() { return this->get_width_internal() * this->get_height_internal() / 8u * this->get_supported_colors_count_(); }
 void WaveshareEPaper::start_command_() {
   this->dc_pin_->digital_write(false);
   this->enable();
@@ -810,14 +826,22 @@ void HOT WaveshareEPaper4P2InBV2::display() {
   // COMMAND DATA START TRANSMISSION 1 (B/W data)
   this->command(0x10);
   this->start_data_();
-  this->write_array(this->buffer_, this->get_buffer_length_());
+  uint32_t middle = this->get_buffer_length_()/this->get_supported_colors_count_();
+  for(uint32_t i=0; i<middle; ++i)
+    this->write_byte(this->buffer_[i]);
   this->end_data_();
 
   // COMMAND DATA START TRANSMISSION 2 (RED data)
   this->command(0x13);
   this->start_data_();
-  for (size_t i = 0; i < this->get_buffer_length_(); i++)
+
+#ifdef USE_ESP32
+  for(uint32_t i=middle; i<this->get_buffer_length_(); ++i)
+    this->write_byte(this->buffer_[i]);
+#else
+  for(uint32_t i=0; i<this->get_buffer_length_(); ++i)
     this->write_byte(0xFF);
+#endif
   this->end_data_();
   delay(2);
 
@@ -829,6 +853,20 @@ void HOT WaveshareEPaper4P2InBV2::display() {
   // NOTE: power off < deep sleep
   this->command(0x02);
 }
+
+//#ifdef USE_ESP8266
+//#endif
+#ifdef USE_ESP32
+int distance(Color a, Color b) {
+  return abs(a.r - b.r) + abs(a.g - b.g) + abs(a.b - b.b) + abs(a.w - b.w);
+}
+
+uint8_t WaveshareEPaper4P2InBV2::get_supported_colors_count_() { return 2u; }
+uint8_t WaveshareEPaper4P2InBV2::get_color_index_(Color color) {
+  return distance(color, Color(255, 0, 0, 0)) < distance(color, Color(255, 255, 255, 255)) ? 1u : 0u;
+}
+#endif
+
 int WaveshareEPaper4P2InBV2::get_width_internal() { return 400; }
 int WaveshareEPaper4P2InBV2::get_height_internal() { return 300; }
 void WaveshareEPaper4P2InBV2::dump_config() {
