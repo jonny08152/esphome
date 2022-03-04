@@ -861,8 +861,8 @@ int distance(Color a, Color b) {
   return abs(a.r - b.r) + abs(a.g - b.g) + abs(a.b - b.b) + abs(a.w - b.w);
 }
 
-uint8_t WaveshareEPaper4P2InBV2::get_supported_colors_count_() { return 2u; }
-uint8_t WaveshareEPaper4P2InBV2::get_color_index_(Color color) {
+uint32_t WaveshareEPaper4P2InBV2::get_supported_colors_count_() { return 2u; }
+uint32_t WaveshareEPaper4P2InBV2::get_color_index_(Color color) {
   return distance(color, Color(255, 0, 0, 0)) < distance(color, Color(255, 255, 255, 255)) ? 1u : 0u;
 }
 #endif

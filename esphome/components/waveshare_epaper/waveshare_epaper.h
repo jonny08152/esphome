@@ -68,7 +68,6 @@ class WaveshareEPaper : public PollingComponent,
 
   virtual uint32_t get_supported_colors_count_() { return 1u; }
   virtual uint32_t get_color_index_(Color color) { return 0u; }
-  uint32_t get_color_bit_count_() { return uint32_t(log(this->get_supported_colors_count_())/log(2))+1u; }
 };
 
 enum WaveshareEPaperTypeAModel {
